@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Kyunnect
+Exec=kyunnect
+Terminal=false
+Type=Application
+Categories=Utility;
+Icon=kyunnect
+Keywords=snap;sandbox;plug;interface;
