@@ -87,7 +87,7 @@ HIDDEN_APPS = [
 ]
 
 # List of interfaces to hide. Add full names or prefixes.
-HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus"]
+HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu"]
 
 
 def get_app_info():
