@@ -80,6 +80,11 @@ def get_translated_string(key, **kwargs):
     translated_string = translation_dict.get(key, TRANSLATIONS['en'].get(key, key))
     return translated_string.format(**kwargs)
 
+# List of apps to hide. Add the snap name here.
+HIDDEN_APPS = [
+    "snapd",
+    "snapd-desktop-integration",
+]
 
 # List of interfaces to hide. Add full names or prefixes.
 HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus"]
@@ -106,6 +111,11 @@ def get_app_info():
                 continue
 
             app_name = parts[0]
+
+            # Skip the application if it is in the hidden applications list
+            if app_name in HIDDEN_APPS:
+                continue
+
             # The confinement note is the last part of the line.
             confinement_note = parts[-1]
 
