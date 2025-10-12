@@ -1,0 +1,685 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+import glob
+import locale
+from pathlib import Path
+
+# Try to import PyQt6 libraries first.
+import sys
+
+try:
+    from PyQt6.QtWidgets import (
+        QApplication, QPushButton, QMessageBox, QLabel,
+        QScrollArea, QWidget, QGridLayout, QToolButton, QSizePolicy,
+        QCheckBox, QHBoxLayout, QStackedWidget, QSpacerItem,
+        QVBoxLayout, QSplitter, QFrame, QProgressBar, QRadioButton, QMainWindow
+    )
+    from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QByteArray, QRect, QPoint, QTimer, QSettings
+    from PyQt6.QtGui import QIcon, QFont
+    print("Using PyQt6")  # Debugging
+except ImportError:
+    print("Error: PyQt6 not found. Please install it via 'pip install PyQt6'.")
+    sys.exit(1)
+
+# --- Get the system's locale and set interface texts based on it ---
+# This part handles the application's internationalization, automatically
+# choosing the correct language based on the user's system locale.
+try:
+    locale.setlocale(locale.LC_ALL, '')
+    LANG, _ = locale.getlocale(locale.LC_CTYPE)
+except locale.Error:
+    LANG = 'en_US'
+
+if not LANG:
+    LANG = 'en_US'
+
+__version__ = "0.2"
+
+TRANSLATIONS = {
+    'en': {
+        'APP_NAME': f"Kyunnect v{__version__}",
+        'TEXT_SELECT_APP': "Choose the app you want to modify.",
+        'TEXT_APPLY_CHANGES': "Apply Changes",
+        'TEXT_PLEASE_WAIT': "Please wait...",
+        'TEXT_SUCCESS_MESSAGE': "Completed!",
+        'TEXT_FAILURE_MESSAGE': "Failed!",
+        'TEXT_NO_APPS': "No Snap application with an icon found.",
+        'TEXT_SELECT_APP_TO_MANAGE': "Select an app.",
+        'TEXT_NO_INTERFACES_FOUND': "No plugs found.",
+        'TEXT_INTERFACES_FOR': "Plugs for:<br>{app_name}",
+        'TEXT_NO_CHANGES_TO_APPLY': "No changes to apply.",
+        'GLOBAL_CONNECT_NAME': "Global Connect",
+        'GLOBAL_DISCONNECT_NAME': "Global Disconnect"
+    },
+    'pt_BR': {
+        'APP_NAME': f"Kyunnect v{__version__}",
+        'TEXT_SELECT_APP': "Escolha o aplicativo que deseja modificar.",
+        'TEXT_APPLY_CHANGES': "Aplicar Mudanças",
+        'TEXT_PLEASE_WAIT': "Aguarde...",
+        'TEXT_SUCCESS_MESSAGE': "Concluído!",
+        'TEXT_FAILURE_MESSAGE': "Falha!",
+        'TEXT_NO_APPS': "Nenhum aplicativo Snap com ícone encontrado.",
+        'TEXT_SELECT_APP_TO_MANAGE': "Selecione um aplicativo.",
+        'TEXT_NO_INTERFACES_FOUND': "Nenhum plug encontrado.",
+        'TEXT_INTERFACES_FOR': "Plugs para:<br>{app_name}",
+        'TEXT_NO_CHANGES_TO_APPLY': "Nenhuma mudança a ser aplicada.",
+        'GLOBAL_CONNECT_NAME': "Conexão global",
+        'GLOBAL_DISCONNECT_NAME': "Desconexão global"
+    }
+}
+
+def get_translated_string(key, **kwargs):
+    language_code = LANG.split('_')[0]
+    translation_dict = TRANSLATIONS.get(LANG, TRANSLATIONS['en'])
+    translated_string = translation_dict.get(key, TRANSLATIONS['en'].get(key, key))
+    return translated_string.format(**kwargs)
+
+# List of apps to hide. Add the snap name here.
+HIDDEN_APPS = [
+    "snapd",
+    "snapd-desktop-integration",
+]
+
+# List of interfaces to hide. Add full names or prefixes.
+HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu"]
+
+# --- NEW: LIST OF GLOBAL INTERFACES ---
+# Add the names of the plugs you want to appear in the global connect and disconnect options.
+GLOBAL_INTERFACES = [
+    "audio-playback",
+    "audio-record",
+    "bluetooth-control",
+    "bluez",
+    "camera",
+    "cups-control",
+    "desktop",
+    "home",
+    "joystick",
+    "media-control",
+    "mount-observe",
+    "network",
+    "network-bind",
+    "network-control",
+    "network-manager",
+    "opengl",
+    "pipewire",
+    "process-control",
+    "pulseaudio",
+    "raw-usb",
+    "removable-media",
+    "screen-inhibit-control",
+    "shared-memory",
+    "system-observe",
+    "udisks2",
+    "uhid",
+    "upower-observe",
+    "wayland",
+    "x11",
+]
+
+
+def get_app_info():
+    """
+    Gets a list of installed snaps with their names and icon names.
+    Returns a list of tuples: [(app_name, icon_name), ...].
+    """
+    try:
+        output = subprocess.check_output(
+            ["snap", "list"],
+            text=True
+        ).strip().split('\n')
+
+        app_list_info = []
+        if len(output) <= 1:
+            return []
+
+        for line in output[1:]:
+            parts = line.split()
+            if not parts:
+                continue
+
+            app_name = parts[0]
+
+            # Skip the application if it is in the hidden applications list
+            if app_name in HIDDEN_APPS:
+                continue
+
+            # The confinement note is the last part of the line.
+            confinement_note = parts[-1]
+
+            # Skip the application if the confinement note is "classic"
+            if "classic" in confinement_note.lower():
+                continue
+
+            desktop_file_pattern = f"/var/lib/snapd/desktop/applications/{app_name}*.desktop"
+            desktop_files = glob.glob(desktop_file_pattern)
+            icon_name = ""
+            if desktop_files:
+                with open(desktop_files[0], 'r') as f:
+                    for file_line in f:
+                        if file_line.startswith("Icon="):
+                            icon_name = file_line.strip().split("=")[1]
+                            break
+
+            if icon_name:
+                app_list_info.append((app_name, icon_name))
+
+        return app_list_info
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+
+def get_interface_status(app_name):
+    """
+    Gets the connection status of all interfaces for a given app.
+    Returns a dict mapping interface name to connection status (True=connected, False=disconnected).
+    """
+    status = {}
+    try:
+        output = subprocess.check_output(
+            ["snap", "connections", app_name],
+            text=True
+        ).strip().split('\n')
+
+        for line in output[1:]:
+            parts = line.split()
+            if len(parts) >= 3:
+                interface_name = parts[1].split(':')[1] if ':' in parts[1] else parts[0]
+                is_connected = parts[2] != '-'
+
+                should_hide = any(interface_name.startswith(prefix) for prefix in HIDDEN_INTERFACES)
+
+                if not should_hide:
+                    status[interface_name] = is_connected
+
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return {}
+
+    return status
+
+def get_all_interfaces():
+    """
+    Gets a list of all unique interfaces (plugs) available on all apps.
+    """
+    # We will now only use the new list, ignoring the previous logic.
+    return sorted(list(set(GLOBAL_INTERFACES)))
+
+class Worker(QThread):
+    finished = pyqtSignal(bool)  # The signal now returns a boolean (True for success, False for failure)
+
+    def __init__(self, command_list):
+        super().__init__()
+        self.command_list = command_list
+
+    def run(self):
+        if not self.command_list:
+            self.finished.emit(True)
+            return
+            
+        command_str = " && ".join([" ".join(cmd) for cmd in self.command_list])
+        full_command = ["pkexec", "sh", "-c", command_str]
+            
+        try:
+            subprocess.run(full_command, check=True)
+            self.finished.emit(True)  # Emits True in case of success
+        except subprocess.CalledProcessError as e:
+            self.finished.emit(False)  # Emits False in case of error
+            return
+
+
+class AppListWidget(QWidget):
+    app_selected = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.BUTTON_SIZE = QSize(180, 100)
+        self.ICON_SIZE = QSize(64, 64)
+
+        self.app_buttons = []
+        self.app_list_info = get_app_info()
+
+        self.main_layout = QVBoxLayout()
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.content_widget = QWidget()
+        self.content_layout = QGridLayout(self.content_widget)
+
+        self.content_layout.setHorizontalSpacing(1)
+        self.content_layout.setVerticalSpacing(5)
+
+
+        self.scroll_area.setWidget(self.content_widget)
+        self.main_layout.addWidget(self.scroll_area)
+
+        self.setLayout(self.main_layout)
+
+        # Adds the timer to debounce the resize event
+        self.resize_timer = QTimer(self)
+        self.resize_timer.setSingleShot(True)
+        self.resize_timer.setInterval(200)  # Small delay in milliseconds
+        self.resize_timer.timeout.connect(self.rebuild_layout)
+
+    def rebuild_layout(self):
+        # To prevent flickering, temporarily disables window updates.
+        self.setUpdatesEnabled(False)
+
+        while self.content_layout.count() > 0:
+            item = self.content_layout.takeAt(0)
+            if item.widget():
+                item.widget().hide()
+                self.content_layout.removeWidget(item.widget())
+            if item.spacerItem():
+                self.content_layout.removeItem(item.spacerItem())
+
+        self.app_buttons.clear()
+        
+        # Add global options to the start of the list
+        global_apps = [
+            (get_translated_string('GLOBAL_CONNECT_NAME'), "list-add"),
+            (get_translated_string('GLOBAL_DISCONNECT_NAME'), "process-stop"),
+        ]
+
+        # Join the list of global apps with the list of installed apps
+        all_apps = global_apps + self.app_list_info
+
+        if not self.app_list_info:
+            no_apps_label = QLabel(get_translated_string('TEXT_NO_APPS'))
+            self.content_layout.addWidget(no_apps_label, 0, 0, 1, -1, Qt.AlignmentFlag.AlignCenter)
+            self.content_layout.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding), 1, 0)
+            self.setUpdatesEnabled(True)
+            return
+
+        container_width = self.scroll_area.viewport().width()
+        if container_width <= 0:
+            container_width = max(1, self.width() - self.scroll_area.verticalScrollBar().width())
+
+        col_width = self.BUTTON_SIZE.width() + self.content_layout.horizontalSpacing()
+        columns = max(1, int(container_width // col_width))
+
+        row, col = 0, 0
+        for app_name, icon_name in all_apps:
+            button = QToolButton()
+            button.setText(app_name)
+            
+            icon = QIcon()
+            if icon_name and os.path.exists(icon_name):
+                icon = QIcon(icon_name)
+            if icon.isNull() and icon_name:
+                icon = QIcon.fromTheme(icon_name)
+            if icon.isNull():
+                icon = QIcon.fromTheme('application-x-executable')
+
+            button.setIcon(icon)
+            button.setIconSize(self.ICON_SIZE)
+
+            button.setFixedSize(self.BUTTON_SIZE)
+
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            button.setCheckable(True)
+            button.clicked.connect(lambda _, name=app_name: self.on_button_clicked(name))
+
+            self.app_buttons.append(button)
+            self.content_layout.addWidget(button, row, col)
+
+            col += 1
+            if col >= columns:
+                col = 0
+                row += 1
+
+        self.content_layout.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding), row + 1, 0, 1, columns)
+
+        # Re-enables window updates after completion
+        self.setUpdatesEnabled(True)
+
+    def resizeEvent(self, event):
+        # Instead of calling rebuild_layout directly, we start the timer
+        self.resize_timer.start()
+        super().resizeEvent(event)
+
+    def on_button_clicked(self, app_name):
+        for button in self.app_buttons:
+            if button.text() == app_name:
+                # Reinforces the selection state (prevents deselecting when clicking again)
+                button.setChecked(True)
+            else:
+                button.setChecked(False)
+
+        # Emit the signal normally
+        self.app_selected.emit(app_name)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not getattr(self, "_first_show_done", False):
+            self._first_show_done = True
+            QTimer.singleShot(50, self.rebuild_layout)
+
+class UnifiedInterfacePaneWidget(QWidget):
+    execute_command_requested = pyqtSignal(str, list)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.app_name = None
+        self.main_layout = QVBoxLayout(self)
+        self.interface_checkboxes = {}
+        self.original_status = {}
+
+        # 1. Title label (hidden initially)
+        self.title_label = QLabel("")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(self.title_label)
+        self.title_label.hide()
+        
+        # 2. Empty state label (visible initially)
+        self.empty_label = QLabel(get_translated_string('TEXT_SELECT_APP_TO_MANAGE'))
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(self.empty_label)
+
+        # 3. Scrollable area for interfaces (hidden initially, will take up most of the space)
+        self.content_widget = QWidget()
+        self.content_layout = QGridLayout(self.content_widget)
+        self.content_layout.setSpacing(10)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setWidget(self.content_widget)
+        self.main_layout.addWidget(self.scroll_area, 1) # Set stretch factor to 1 to make it expand
+        self.scroll_area.hide()
+
+        # 4. Status frame with progress bar/label (hidden initially)
+        self.status_frame = QFrame()
+        self.status_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.status_layout = QVBoxLayout(self.status_frame)
+        self.status_layout.setContentsMargins(0, 0, 0, 0)
+        self.status_layout.setSpacing(0)
+        self.status_stacked_widget = QStackedWidget()
+        self.status_label = QLabel("")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_bar.setTextVisible(False)
+        self.status_stacked_widget.addWidget(self.status_label)
+        self.status_stacked_widget.addWidget(self.progress_bar)
+        self.status_layout.addWidget(self.status_stacked_widget)
+        self.main_layout.addWidget(self.status_frame)
+        self.status_frame.hide()
+
+        # 5. Apply button (hidden initially)
+        self.apply_button = QPushButton(get_translated_string('TEXT_APPLY_CHANGES'))
+        self.apply_button.clicked.connect(self.on_apply_clicked)
+        self.main_layout.addWidget(self.apply_button)
+        self.apply_button.hide()
+
+
+    def rebuild_layout(self):
+        while self.content_layout.count() > 0:
+            item = self.content_layout.takeAt(0)
+            if item.widget():
+                self.content_layout.removeWidget(item.widget())
+            if item.spacerItem():
+                self.content_layout.removeItem(item.spacerItem())
+
+        if not self.interface_checkboxes:
+            self.content_layout.addWidget(QLabel(get_translated_string('TEXT_NO_INTERFACES_FOUND')), 0, 0)
+            self.content_layout.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding), 1, 0)
+            return
+
+        container_width = self.width() - self.scroll_area.verticalScrollBar().width() - 20
+        if container_width <= 0:
+            container_width = 400
+
+        longest_interface_name = ""
+        for name in self.interface_checkboxes.keys():
+            if len(name) > len(longest_interface_name):
+                longest_interface_name = name
+
+        temp_checkbox = QCheckBox(longest_interface_name)
+        temp_checkbox.adjustSize()
+        item_width = temp_checkbox.width() + self.content_layout.horizontalSpacing()
+
+        columns = max(1, int(container_width // item_width))
+
+        row, col = 0, 0
+        for checkbox in self.interface_checkboxes.values():
+            self.content_layout.addWidget(checkbox, row, col)
+            col += 1
+            if col >= columns:
+                col = 0
+                row += 1
+
+        self.content_layout.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding), row + 1, 0, 1, columns)
+
+    def resizeEvent(self, event):
+        self.rebuild_layout()
+        super().resizeEvent(event)
+
+    def update_interfaces(self, app_name):
+        self.app_name = app_name
+        self.clear_checkboxes()
+
+        # Add the new translations dictionary
+        global_translations = {
+            get_translated_string('GLOBAL_CONNECT_NAME'): get_translated_string('GLOBAL_CONNECT_NAME'),
+            get_translated_string('GLOBAL_DISCONNECT_NAME'): get_translated_string('GLOBAL_DISCONNECT_NAME'),
+        }
+
+        translated_title = get_translated_string('TEXT_INTERFACES_FOR', app_name=global_translations.get(app_name, app_name))
+        self.title_label.setText(translated_title)
+
+        # Logic for global options - Now using QRadioButton
+        if app_name in [get_translated_string('GLOBAL_CONNECT_NAME'), get_translated_string('GLOBAL_DISCONNECT_NAME')]:
+            interface_list = get_all_interfaces()
+            for interface in interface_list:
+                # Use QRadioButton instead of QCheckBox for global options
+                radiobutton = QRadioButton(interface)
+                radiobutton.setChecked(False)
+                self.interface_checkboxes[interface] = radiobutton # We keep the dictionary name for simplicity
+                self.original_status[interface] = False
+        else:
+            interface_status = get_interface_status(app_name)
+            for interface, is_connected in interface_status.items():
+                # Keep using QCheckBox for individual app plugs
+                checkbox = QCheckBox(interface)
+                checkbox.setChecked(is_connected)
+                self.interface_checkboxes[interface] = checkbox
+                self.original_status[interface] = is_connected
+
+        if self.interface_checkboxes:
+            self.empty_label.hide()
+            self.title_label.show()
+            self.scroll_area.show()
+            self.status_frame.show()
+            self.apply_button.show()
+            self.rebuild_layout()
+        else:
+            self.empty_label.setText(get_translated_string('TEXT_NO_INTERFACES_FOUND'))
+            self.empty_label.show()
+            self.title_label.hide()
+            self.scroll_area.hide()
+            self.status_frame.hide()
+            self.apply_button.hide()
+
+    def on_apply_clicked(self):
+        commands_to_run = []
+        app_list = get_app_info()
+
+        # Logic for global options
+        if self.app_name == get_translated_string('GLOBAL_CONNECT_NAME'):
+            # Find the single checked radio button
+            checked_interface = None
+            for interface, widget in self.interface_checkboxes.items():
+                if isinstance(widget, QRadioButton) and widget.isChecked():
+                    checked_interface = interface
+                    break
+            
+            if checked_interface:
+                for app_name, _ in app_list:
+                    # Check if the interface exists for the app before trying to connect
+                    if checked_interface in get_interface_status(app_name):
+                        commands_to_run.append(["snap", "connect", f"{app_name}:{checked_interface}"])
+
+            self.execute_command_requested.emit(self.app_name, commands_to_run)
+
+        elif self.app_name == get_translated_string('GLOBAL_DISCONNECT_NAME'):
+            # Find the single checked radio button
+            checked_interface = None
+            for interface, widget in self.interface_checkboxes.items():
+                if isinstance(widget, QRadioButton) and widget.isChecked():
+                    checked_interface = interface
+                    break
+            
+            if checked_interface:
+                for app_name, _ in app_list:
+                    # Check if the interface exists for the app before trying to disconnect
+                    if checked_interface in get_interface_status(app_name):
+                        commands_to_run.append(["snap", "disconnect", f"{app_name}:{checked_interface}"])
+
+            self.execute_command_requested.emit(self.app_name, commands_to_run)
+            
+        else:
+            # Original logic for individual app plugs (using checkboxes)
+            for interface, checkbox in self.interface_checkboxes.items():
+                current_status = checkbox.isChecked()
+                original_status = self.original_status.get(interface, False)
+
+                if current_status and not original_status:
+                    commands_to_run.append(["snap", "connect", f"{self.app_name}:{interface}"])
+                elif not current_status and original_status:
+                    commands_to_run.append(["snap", "disconnect", f"{self.app_name}:{interface}"])
+
+            self.execute_command_requested.emit(self.app_name, commands_to_run)
+            
+    def clear_checkboxes(self):
+        while self.content_layout.count() > 0:
+            item = self.content_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            if item.spacerItem():
+                self.content_layout.removeItem(item.spacerItem())
+        self.interface_checkboxes.clear()
+
+class Kyunnect(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle(get_translated_string('APP_NAME'))
+        self.resize(1200, 720)
+        self.setWindowFlags(Qt.WindowType.Window)
+
+        self.worker = None
+
+        central_widget = QWidget()
+        main_layout = QVBoxLayout(central_widget)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        total_width = self.width()
+        left_width = int(total_width * 0.70)
+        right_width = total_width - left_width
+
+        self.app_list_widget = AppListWidget()
+        self.app_list_widget.app_selected.connect(self.on_app_selected)
+        splitter.addWidget(self.app_list_widget)
+
+        self.interface_pane = UnifiedInterfacePaneWidget()
+        self.interface_pane.execute_command_requested.connect(self.execute_command)
+        splitter.addWidget(self.interface_pane)
+
+        splitter.setSizes([left_width, right_width])
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+
+        main_layout.addWidget(splitter)
+
+        self.setCentralWidget(central_widget)
+
+        self.restore_window_state()
+
+        # Sets the main window icon
+        local_icons = ['kyunnect.svg', 'Kyunnect.svg']
+
+        icon_set = False
+        for icon_file in local_icons:
+            if Path(icon_file).exists():
+                self.setWindowIcon(QIcon(icon_file))
+                icon_set = True
+                break
+
+        if not icon_set:
+            for name in ['kyunnect', 'Kyunnect', '/snap/snapd/current/usr/share/snapd/snapcraft-logo-bird.svg']:
+                icon = QIcon.fromTheme(name)
+                if not icon.isNull():
+                    self.setWindowIcon(icon)
+                    break
+
+    def on_app_selected(self, app_name):
+        self.interface_pane.update_interfaces(app_name)
+
+    def execute_command(self, app_name, commands_to_run):
+        if not commands_to_run:
+            self.interface_pane.status_stacked_widget.setCurrentIndex(0)
+            self.interface_pane.status_label.setText(get_translated_string('TEXT_NO_CHANGES_TO_APPLY'))
+            QTimer.singleShot(5000, lambda: self.interface_pane.status_label.setText(""))
+            return
+
+        # Disables the interface to prevent user interaction while the command is running
+        self.app_list_widget.setEnabled(False)
+        self.interface_pane.apply_button.setEnabled(False)
+
+        # Show the progress bar and start the worker
+        self.interface_pane.status_stacked_widget.setCurrentIndex(1)
+        self.worker = Worker(commands_to_run)
+            
+        self.worker.finished.connect(lambda success: self.on_worker_finished(success, app_name))
+        self.worker.start()
+
+    def on_worker_finished(self, success, app_name):
+        # Re-enables the interface after the command is completed
+        self.app_list_widget.setEnabled(True)
+        self.interface_pane.apply_button.setEnabled(True)
+
+        # Hide the progress bar and show the result text
+        self.interface_pane.status_stacked_widget.setCurrentIndex(0)
+        
+        if success:
+            self.interface_pane.status_label.setText(get_translated_string('TEXT_SUCCESS_MESSAGE'))
+        else:
+            self.interface_pane.status_label.setText(get_translated_string('TEXT_FAILURE_MESSAGE'))
+
+        QTimer.singleShot(5000, lambda: self.interface_pane.status_label.setText(""))
+        self.interface_pane.update_interfaces(app_name)
+
+    def closeEvent(self, event):
+        # Saves window size and position when closing.
+        settings = QSettings("Kyuyrii", "Kyunnect")
+        settings.setValue("geometry", self.saveGeometry())
+        settings.setValue("windowState", self.saveState())
+        super().closeEvent(event)
+
+    def restore_window_state(self):
+        # Restores the window size and position.
+        settings = QSettings("Kyuyrii", "Kyunnect")
+        geometry = settings.value("geometry")
+        state = settings.value("windowState")
+        if geometry:
+            self.restoreGeometry(geometry)
+        if state:
+            self.restoreState(state)
+
+
+def run_app():
+    app = QApplication(sys.argv)
+
+    # Set the application ID so that Wayland can find the icon.
+    # This is crucial for the icon to appear on the taskbar.
+    app.setDesktopFileName(get_translated_string('APP_NAME').lower().replace(' ', '-'))
+
+    window = Kyunnect()
+    window.show()
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    run_app()
