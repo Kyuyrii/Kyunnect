@@ -1,10 +1,10 @@
 [Desktop Entry]
-StartupWMClass=kyunnect
 Name=Kyunnect
 Exec=kyunnect
+Icon=/snap/snapd/current/usr/share/snapd/snapcraft-logo-bird.svg
+StartupWMClass=kyunnect
+Keywords=snap;sandbox;plug;interface;
+Categories=Utility;
+Comment=A Snap plug manager
 Terminal=false
 Type=Application
-Categories=Utility;
-Icon=/snap/snapd/current/usr/share/snapd/snapcraft-logo-bird.svg
-Keywords=snap;sandbox;plug;interface;
-Comment=A Snap plug manager

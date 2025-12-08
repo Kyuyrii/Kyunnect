@@ -7,21 +7,17 @@ import glob
 import locale
 from pathlib import Path
 
-# Try to import PyQt6 libraries first.
-import sys
-
 try:
     from PyQt6.QtWidgets import (
-        QApplication, QPushButton, QMessageBox, QLabel,
+        QApplication, QPushButton, QLabel,
         QScrollArea, QWidget, QGridLayout, QToolButton, QSizePolicy,
-        QCheckBox, QHBoxLayout, QStackedWidget, QSpacerItem,
-        QVBoxLayout, QSplitter, QFrame, QProgressBar, QRadioButton, QMainWindow
+        QCheckBox, QSpacerItem, QVBoxLayout, QSplitter, QRadioButton, QMainWindow
     )
-    from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QByteArray, QRect, QPoint, QTimer, QSettings
-    from PyQt6.QtGui import QIcon, QFont
+    from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer, QSettings
+    from PyQt6.QtGui import QIcon
     print("Using PyQt6")  # Debugging
 except ImportError:
-    print("Error: PyQt6 not found. Please install it via 'pip install PyQt6'.")
+    print("PyQt6 not found. Please install it via 'sudo apt install python3-pyqt6'.")
     sys.exit(1)
 
 # --- Get the system's locale and set interface texts based on it ---
@@ -36,7 +32,7 @@ except locale.Error:
 if not LANG:
     LANG = 'en_US'
 
-__version__ = "0.2"
+__version__ = "0.3"
 
 TRANSLATIONS = {
     'en': {
@@ -68,6 +64,21 @@ TRANSLATIONS = {
         'TEXT_NO_CHANGES_TO_APPLY': "Nenhuma mudança a ser aplicada.",
         'GLOBAL_CONNECT_NAME': "Conexão global",
         'GLOBAL_DISCONNECT_NAME': "Desconexão global"
+    },
+    'es_ES': {
+        'APP_NAME': f"Kyunnect v{__version__}",
+        'TEXT_SELECT_APP': "Elija la aplicación que desea modificar.",
+        'TEXT_APPLY_CHANGES': "Aplicar Cambios",
+        'TEXT_PLEASE_WAIT': "Espere...",
+        'TEXT_SUCCESS_MESSAGE': "¡Completado!",
+        'TEXT_FAILURE_MESSAGE': "¡Falló!",
+        'TEXT_NO_APPS': "No se encontraron aplicaciones Snap con icono.",
+        'TEXT_SELECT_APP_TO_MANAGE': "Seleccione una aplicación.",
+        'TEXT_NO_INTERFACES_FOUND': "No se encontraron plugs.",
+        'TEXT_INTERFACES_FOR': "Plugs para:<br>{app_name}",
+        'TEXT_NO_CHANGES_TO_APPLY': "No hay cambios para aplicar.",
+        'GLOBAL_CONNECT_NAME': "Conexión global",
+        'GLOBAL_DISCONNECT_NAME': "Desconexión global"
     }
 }
 
@@ -84,9 +95,8 @@ HIDDEN_APPS = [
 ]
 
 # List of interfaces to hide. Add full names or prefixes.
-HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu"]
+HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu", "lxqt-support"]
 
-# --- NEW: LIST OF GLOBAL INTERFACES ---
 # Add the names of the plugs you want to appear in the global connect and disconnect options.
 GLOBAL_INTERFACES = [
     "audio-playback",
@@ -201,7 +211,7 @@ def get_interface_status(app_name):
 
 def get_all_interfaces():
     """
-    Gets a list of all unique interfaces (plugs) available on all apps.
+    Gets a list of all unique interfaces (plugs) available on apps.
     """
     # We will now only use the new list, ignoring the previous logic.
     return sorted(list(set(GLOBAL_INTERFACES)))
@@ -389,31 +399,11 @@ class UnifiedInterfacePaneWidget(QWidget):
         self.main_layout.addWidget(self.scroll_area, 1) # Set stretch factor to 1 to make it expand
         self.scroll_area.hide()
 
-        # 4. Status frame with progress bar/label (hidden initially)
-        self.status_frame = QFrame()
-        self.status_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        self.status_layout = QVBoxLayout(self.status_frame)
-        self.status_layout.setContentsMargins(0, 0, 0, 0)
-        self.status_layout.setSpacing(0)
-        self.status_stacked_widget = QStackedWidget()
-        self.status_label = QLabel("")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)
-        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.progress_bar.setTextVisible(False)
-        self.status_stacked_widget.addWidget(self.status_label)
-        self.status_stacked_widget.addWidget(self.progress_bar)
-        self.status_layout.addWidget(self.status_stacked_widget)
-        self.main_layout.addWidget(self.status_frame)
-        self.status_frame.hide()
-
-        # 5. Apply button (hidden initially)
+        # 4. Apply button (hidden initially)
         self.apply_button = QPushButton(get_translated_string('TEXT_APPLY_CHANGES'))
         self.apply_button.clicked.connect(self.on_apply_clicked)
         self.main_layout.addWidget(self.apply_button)
         self.apply_button.hide()
-
 
     def rebuild_layout(self):
         while self.content_layout.count() > 0:
@@ -492,7 +482,6 @@ class UnifiedInterfacePaneWidget(QWidget):
             self.empty_label.hide()
             self.title_label.show()
             self.scroll_area.show()
-            self.status_frame.show()
             self.apply_button.show()
             self.rebuild_layout()
         else:
@@ -500,7 +489,6 @@ class UnifiedInterfacePaneWidget(QWidget):
             self.empty_label.show()
             self.title_label.hide()
             self.scroll_area.hide()
-            self.status_frame.hide()
             self.apply_button.hide()
 
     def on_apply_clicked(self):
@@ -565,7 +553,8 @@ class UnifiedInterfacePaneWidget(QWidget):
 class Kyunnect(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(get_translated_string('APP_NAME'))
+        self.original_window_title = get_translated_string('APP_NAME')
+        self.setWindowTitle(self.original_window_title)
         self.resize(1200, 720)
         self.setWindowFlags(Qt.WindowType.Window)
 
@@ -574,7 +563,7 @@ class Kyunnect(QMainWindow):
         central_widget = QWidget()
         main_layout = QVBoxLayout(central_widget)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
 
         total_width = self.width()
         left_width = int(total_width * 0.70)
@@ -582,17 +571,17 @@ class Kyunnect(QMainWindow):
 
         self.app_list_widget = AppListWidget()
         self.app_list_widget.app_selected.connect(self.on_app_selected)
-        splitter.addWidget(self.app_list_widget)
+        self.splitter.addWidget(self.app_list_widget)
 
         self.interface_pane = UnifiedInterfacePaneWidget()
         self.interface_pane.execute_command_requested.connect(self.execute_command)
-        splitter.addWidget(self.interface_pane)
+        self.splitter.addWidget(self.interface_pane)
 
-        splitter.setSizes([left_width, right_width])
-        splitter.setCollapsible(0, False)
-        splitter.setCollapsible(1, False)
+        self.splitter.setSizes([left_width, right_width])
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
 
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(self.splitter)
 
         self.setCentralWidget(central_widget)
 
@@ -620,19 +609,20 @@ class Kyunnect(QMainWindow):
 
     def execute_command(self, app_name, commands_to_run):
         if not commands_to_run:
-            self.interface_pane.status_stacked_widget.setCurrentIndex(0)
-            self.interface_pane.status_label.setText(get_translated_string('TEXT_NO_CHANGES_TO_APPLY'))
-            QTimer.singleShot(5000, lambda: self.interface_pane.status_label.setText(""))
+            # Update the window title with the message
+            self.setWindowTitle(f"{self.original_window_title} - {get_translated_string('TEXT_NO_CHANGES_TO_APPLY')}")
+            # Restores the original title after 3 seconds.
+            QTimer.singleShot(3000, lambda: self.setWindowTitle(self.original_window_title))
             return
 
         # Disables the interface to prevent user interaction while the command is running
         self.app_list_widget.setEnabled(False)
         self.interface_pane.apply_button.setEnabled(False)
 
-        # Show the progress bar and start the worker
-        self.interface_pane.status_stacked_widget.setCurrentIndex(1)
+        # Update the window title to show that it is processing
+        self.setWindowTitle(f"{self.original_window_title} - {get_translated_string('TEXT_PLEASE_WAIT')}")
+        
         self.worker = Worker(commands_to_run)
-            
         self.worker.finished.connect(lambda success: self.on_worker_finished(success, app_name))
         self.worker.start()
 
@@ -641,41 +631,51 @@ class Kyunnect(QMainWindow):
         self.app_list_widget.setEnabled(True)
         self.interface_pane.apply_button.setEnabled(True)
 
-        # Hide the progress bar and show the result text
-        self.interface_pane.status_stacked_widget.setCurrentIndex(0)
-        
+        # Update the window title with the result.
         if success:
-            self.interface_pane.status_label.setText(get_translated_string('TEXT_SUCCESS_MESSAGE'))
+            self.setWindowTitle(f"{self.original_window_title} - {get_translated_string('TEXT_SUCCESS_MESSAGE')}")
         else:
-            self.interface_pane.status_label.setText(get_translated_string('TEXT_FAILURE_MESSAGE'))
+            self.setWindowTitle(f"{self.original_window_title} - {get_translated_string('TEXT_FAILURE_MESSAGE')}")
 
-        QTimer.singleShot(5000, lambda: self.interface_pane.status_label.setText(""))
-        self.interface_pane.update_interfaces(app_name)
+        # Restores the original title after 3 seconds.
+        QTimer.singleShot(3000, lambda: self.setWindowTitle(self.original_window_title))
+        
+        # Update the interfaces to reflect the changes.
+        global_connect = get_translated_string('GLOBAL_CONNECT_NAME')
+        global_disconnect = get_translated_string('GLOBAL_DISCONNECT_NAME')
+        
+        if app_name not in [global_connect, global_disconnect]:
+            self.interface_pane.update_interfaces(app_name)
 
     def closeEvent(self, event):
         # Saves window size and position when closing.
-        settings = QSettings("Kyuyrii", "Kyunnect")
+        settings = QSettings("NyKyu", "Kyunnect")
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
+        settings.setValue("splitterSizes", self.splitter.sizes())
         super().closeEvent(event)
 
     def restore_window_state(self):
         # Restores the window size and position.
-        settings = QSettings("Kyuyrii", "Kyunnect")
+        settings = QSettings("NyKyu", "Kyunnect")
         geometry = settings.value("geometry")
         state = settings.value("windowState")
+        splitter_sizes = settings.value("splitterSizes")
+        
         if geometry:
             self.restoreGeometry(geometry)
         if state:
             self.restoreState(state)
-
+        if splitter_sizes:
+            sizes = [int(size) for size in splitter_sizes]
+            self.splitter.setSizes(sizes)
 
 def run_app():
     app = QApplication(sys.argv)
 
     # Set the application ID so that Wayland can find the icon.
     # This is crucial for the icon to appear on the taskbar.
-    app.setDesktopFileName(get_translated_string('APP_NAME').lower().replace(' ', '-'))
+    app.setDesktopFileName("kyunnect")
 
     window = Kyunnect()
     window.show()
