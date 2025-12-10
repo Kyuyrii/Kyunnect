@@ -27,12 +27,12 @@ try:
     locale.setlocale(locale.LC_ALL, '')
     LANG, _ = locale.getlocale(locale.LC_CTYPE)
 except locale.Error:
-    LANG = 'en_US'
+    LANG = 'en'
 
 if not LANG:
-    LANG = 'en_US'
+    LANG = 'en'
 
-__version__ = "0.3"
+__version__ = "0.3.1"
 
 TRANSLATIONS = {
     'en': {
@@ -42,7 +42,7 @@ TRANSLATIONS = {
         'TEXT_PLEASE_WAIT': "Please wait...",
         'TEXT_SUCCESS_MESSAGE': "Completed!",
         'TEXT_FAILURE_MESSAGE': "Failed!",
-        'TEXT_NO_APPS': "No Snap application with an icon found.",
+        'TEXT_NO_APPS': "Compatible Snap apps not found.",
         'TEXT_SELECT_APP_TO_MANAGE': "Select an app.",
         'TEXT_NO_INTERFACES_FOUND': "No plugs found.",
         'TEXT_INTERFACES_FOR': "Plugs for:<br>{app_name}",
@@ -50,14 +50,14 @@ TRANSLATIONS = {
         'GLOBAL_CONNECT_NAME': "Global Connect",
         'GLOBAL_DISCONNECT_NAME': "Global Disconnect"
     },
-    'pt_BR': {
+    'pt': {
         'APP_NAME': f"Kyunnect v{__version__}",
         'TEXT_SELECT_APP': "Escolha o aplicativo que deseja modificar.",
         'TEXT_APPLY_CHANGES': "Aplicar Mudanças",
         'TEXT_PLEASE_WAIT': "Aguarde...",
         'TEXT_SUCCESS_MESSAGE': "Concluído!",
         'TEXT_FAILURE_MESSAGE': "Falha!",
-        'TEXT_NO_APPS': "Nenhum aplicativo Snap com ícone encontrado.",
+        'TEXT_NO_APPS': "Apps Snap compativeis não encontrados.",
         'TEXT_SELECT_APP_TO_MANAGE': "Selecione um aplicativo.",
         'TEXT_NO_INTERFACES_FOUND': "Nenhum plug encontrado.",
         'TEXT_INTERFACES_FOR': "Plugs para:<br>{app_name}",
@@ -65,14 +65,14 @@ TRANSLATIONS = {
         'GLOBAL_CONNECT_NAME': "Conexão global",
         'GLOBAL_DISCONNECT_NAME': "Desconexão global"
     },
-    'es_ES': {
+    'es': {
         'APP_NAME': f"Kyunnect v{__version__}",
         'TEXT_SELECT_APP': "Elija la aplicación que desea modificar.",
         'TEXT_APPLY_CHANGES': "Aplicar Cambios",
         'TEXT_PLEASE_WAIT': "Espere...",
         'TEXT_SUCCESS_MESSAGE': "¡Completado!",
         'TEXT_FAILURE_MESSAGE': "¡Falló!",
-        'TEXT_NO_APPS': "No se encontraron aplicaciones Snap con icono.",
+        'TEXT_NO_APPS': "Aplicaciones Snap compatibles no encontradas.",
         'TEXT_SELECT_APP_TO_MANAGE': "Seleccione una aplicación.",
         'TEXT_NO_INTERFACES_FOUND': "No se encontraron plugs.",
         'TEXT_INTERFACES_FOR': "Plugs para:<br>{app_name}",
@@ -83,21 +83,21 @@ TRANSLATIONS = {
 }
 
 def get_translated_string(key, **kwargs):
-    language_code = LANG.split('_')[0]
-    translation_dict = TRANSLATIONS.get(LANG, TRANSLATIONS['en'])
+    main_lang = LANG.split('_')[0] if LANG else 'en'
+    translation_dict = TRANSLATIONS.get(main_lang, TRANSLATIONS['en'])
     translated_string = translation_dict.get(key, TRANSLATIONS['en'].get(key, key))
-    return translated_string.format(**kwargs)
+    return translated_string.format(**kwargs) if kwargs else translated_string
 
-# List of apps to hide. Add the snap name here.
+# List of apps to hide. The snap name here.
 HIDDEN_APPS = [
     "snapd",
     "snapd-desktop-integration",
 ]
 
-# List of interfaces to hide. Add full names or prefixes.
-HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu", "lxqt-support"]
+# List of interfaces to hide. Full names or prefixes.
+HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu", "lxqt-support", "mpris"]
 
-# Add the names of the plugs you want to appear in the global connect and disconnect options.
+# Names of plugs that should appear in the global connection and disconnection options.
 GLOBAL_INTERFACES = [
     "audio-playback",
     "audio-record",
@@ -682,4 +682,4 @@ def run_app():
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    run_app()
+    run_app() 
