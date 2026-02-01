@@ -32,7 +32,7 @@ except locale.Error:
 if not LANG:
     LANG = 'en'
 
-__version__ = "0.4"
+__version__ = "0.4.1"
 
 TRANSLATIONS = {
     'en': {
@@ -649,7 +649,7 @@ class Kyunnect(QMainWindow):
 
     def closeEvent(self, event):
         # Saves window size and position when closing.
-        settings = QSettings("NyKyu", "Kyunnect")
+        settings = QSettings("Kyunnect")
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
         settings.setValue("splitterSizes", self.splitter.sizes())
@@ -657,7 +657,7 @@ class Kyunnect(QMainWindow):
 
     def restore_window_state(self):
         # Restores the window size and position.
-        settings = QSettings("NyKyu", "Kyunnect")
+        settings = QSettings("Kyunnect")
         geometry = settings.value("geometry")
         state = settings.value("windowState")
         splitter_sizes = settings.value("splitterSizes")
