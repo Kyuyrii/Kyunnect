@@ -32,7 +32,7 @@ except locale.Error:
 if not LANG:
     LANG = 'en'
 
-__version__ = "0.3.1"
+__version__ = "0.4"
 
 TRANSLATIONS = {
     'en': {
@@ -95,7 +95,7 @@ HIDDEN_APPS = [
 ]
 
 # List of interfaces to hide. Full names or prefixes.
-HIDDEN_INTERFACES = ["gtk-2", "gtk-3", "icon-themes", "sound-themes", "gnome-", "kf5-", "kf6-", "kde-qt", "gpu-2404", "gaming-mesa", "ffmpeg-2404", "hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu", "lxqt-support", "mpris"]
+HIDDEN_INTERFACES = ["hidraw", "dbus", "npu-libs", "openvino-ai-plugins-gimp-libs", "openvino-libs", "intel-npu", "mpris"]
 
 # Names of plugs that should appear in the global connection and disconnection options.
 GLOBAL_INTERFACES = [
@@ -196,12 +196,12 @@ def get_interface_status(app_name):
         for line in output[1:]:
             parts = line.split()
             if len(parts) >= 3:
-                interface_name = parts[1].split(':')[1] if ':' in parts[1] else parts[0]
+                interface_name = parts[0]
                 is_connected = parts[2] != '-'
 
                 should_hide = any(interface_name.startswith(prefix) for prefix in HIDDEN_INTERFACES)
 
-                if not should_hide:
+                if not should_hide and not interface_name.startswith("content["):
                     status[interface_name] = is_connected
 
     except (FileNotFoundError, subprocess.CalledProcessError):
