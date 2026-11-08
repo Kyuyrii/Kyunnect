@@ -32,7 +32,7 @@ except locale.Error:
 if not LANG:
     LANG = 'en'
 
-__version__ = "0.4.1"
+__version__ = "0.5"
 
 TRANSLATIONS = {
     'en': {
@@ -121,7 +121,6 @@ GLOBAL_INTERFACES = [
     "raw-usb",
     "removable-media",
     "screen-inhibit-control",
-    "shared-memory",
     "system-observe",
     "udisks2",
     "uhid",
@@ -185,6 +184,12 @@ def get_interface_status(app_name):
     """
     Gets the connection status of all interfaces for a given app.
     Returns a dict mapping interface name to connection status (True=connected, False=disconnected).
+
+    Only includes interfaces whose plug name matches the interface name itself,
+    so that `snap connect <app>:<interface>` (and the matching disconnect) will
+    work directly. Plug names that differ from the interface name (e.g.
+    'dot-mozilla-firefox' for the 'personal-files' interface) are skipped, as
+    are 'content[...]' interfaces and any interface in HIDDEN_INTERFACES.
     """
     status = {}
     try:
@@ -195,14 +200,33 @@ def get_interface_status(app_name):
 
         for line in output[1:]:
             parts = line.split()
-            if len(parts) >= 3:
-                interface_name = parts[0]
-                is_connected = parts[2] != '-'
+            if len(parts) < 3:
+                continue
 
-                should_hide = any(interface_name.startswith(prefix) for prefix in HIDDEN_INTERFACES)
+            interface_name = parts[0]
+            plug_full = parts[1]   # e.g. "firefox:home" or "firefox:dot-mozilla-firefox"
+            slot_full = parts[2]   # e.g. ":home" or "-"
 
-                if not should_hide and not interface_name.startswith("content["):
-                    status[interface_name] = is_connected
+            # Skip content[...] interfaces
+            if interface_name.startswith("content["):
+                continue
+
+            # Skip hidden interfaces
+            if any(interface_name.startswith(prefix) for prefix in HIDDEN_INTERFACES):
+                continue
+
+            # Extract the plug name (the part after the first ':')
+            if ":" not in plug_full:
+                continue
+            plug_name = plug_full.split(":", 1)[1]
+
+            # Only include plugs whose name matches the interface name,
+            # so that `snap connect app:interface` works directly.
+            if plug_name != interface_name:
+                continue
+
+            is_connected = slot_full != "-"
+            status[interface_name] = is_connected
 
     except (FileNotFoundError, subprocess.CalledProcessError):
         return {}
@@ -227,10 +251,10 @@ class Worker(QThread):
         if not self.command_list:
             self.finished.emit(True)
             return
-            
+
         command_str = " && ".join([" ".join(cmd) for cmd in self.command_list])
         full_command = ["pkexec", "sh", "-c", command_str]
-            
+
         try:
             subprocess.run(full_command, check=True)
             self.finished.emit(True)  # Emits True in case of success
@@ -287,7 +311,7 @@ class AppListWidget(QWidget):
                 self.content_layout.removeItem(item.spacerItem())
 
         self.app_buttons.clear()
-        
+
         # Add global options to the start of the list
         global_apps = [
             (get_translated_string('GLOBAL_CONNECT_NAME'), "list-add"),
@@ -315,7 +339,7 @@ class AppListWidget(QWidget):
         for app_name, icon_name in all_apps:
             button = QToolButton()
             button.setText(app_name)
-            
+
             icon = QIcon()
             if icon_name and os.path.exists(icon_name):
                 icon = QIcon(icon_name)
@@ -383,7 +407,7 @@ class UnifiedInterfacePaneWidget(QWidget):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.title_label)
         self.title_label.hide()
-        
+
         # 2. Empty state label (visible initially)
         self.empty_label = QLabel(get_translated_string('TEXT_SELECT_APP_TO_MANAGE'))
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -396,7 +420,7 @@ class UnifiedInterfacePaneWidget(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setWidget(self.content_widget)
-        self.main_layout.addWidget(self.scroll_area, 1) # Set stretch factor to 1 to make it expand
+        self.main_layout.addWidget(self.scroll_area, 1)  # Set stretch factor to 1 to make it expand
         self.scroll_area.hide()
 
         # 4. Apply button (hidden initially)
@@ -467,7 +491,7 @@ class UnifiedInterfacePaneWidget(QWidget):
                 # Use QRadioButton instead of QCheckBox for global options
                 radiobutton = QRadioButton(interface)
                 radiobutton.setChecked(False)
-                self.interface_checkboxes[interface] = radiobutton # We keep the dictionary name for simplicity
+                self.interface_checkboxes[interface] = radiobutton  # We keep the dictionary name for simplicity
                 self.original_status[interface] = False
         else:
             interface_status = get_interface_status(app_name)
@@ -503,7 +527,7 @@ class UnifiedInterfacePaneWidget(QWidget):
                 if isinstance(widget, QRadioButton) and widget.isChecked():
                     checked_interface = interface
                     break
-            
+
             if checked_interface:
                 for app_name, _ in app_list:
                     # Check if the interface exists for the app before trying to connect
@@ -519,7 +543,7 @@ class UnifiedInterfacePaneWidget(QWidget):
                 if isinstance(widget, QRadioButton) and widget.isChecked():
                     checked_interface = interface
                     break
-            
+
             if checked_interface:
                 for app_name, _ in app_list:
                     # Check if the interface exists for the app before trying to disconnect
@@ -527,7 +551,7 @@ class UnifiedInterfacePaneWidget(QWidget):
                         commands_to_run.append(["snap", "disconnect", f"{app_name}:{checked_interface}"])
 
             self.execute_command_requested.emit(self.app_name, commands_to_run)
-            
+
         else:
             # Original logic for individual app plugs (using checkboxes)
             for interface, checkbox in self.interface_checkboxes.items():
@@ -540,7 +564,7 @@ class UnifiedInterfacePaneWidget(QWidget):
                     commands_to_run.append(["snap", "disconnect", f"{self.app_name}:{interface}"])
 
             self.execute_command_requested.emit(self.app_name, commands_to_run)
-            
+
     def clear_checkboxes(self):
         while self.content_layout.count() > 0:
             item = self.content_layout.takeAt(0)
@@ -621,7 +645,7 @@ class Kyunnect(QMainWindow):
 
         # Update the window title to show that it is processing
         self.setWindowTitle(f"{self.original_window_title} - {get_translated_string('TEXT_PLEASE_WAIT')}")
-        
+
         self.worker = Worker(commands_to_run)
         self.worker.finished.connect(lambda success: self.on_worker_finished(success, app_name))
         self.worker.start()
@@ -639,11 +663,11 @@ class Kyunnect(QMainWindow):
 
         # Restores the original title after 3 seconds.
         QTimer.singleShot(3000, lambda: self.setWindowTitle(self.original_window_title))
-        
+
         # Update the interfaces to reflect the changes.
         global_connect = get_translated_string('GLOBAL_CONNECT_NAME')
         global_disconnect = get_translated_string('GLOBAL_DISCONNECT_NAME')
-        
+
         if app_name not in [global_connect, global_disconnect]:
             self.interface_pane.update_interfaces(app_name)
 
@@ -661,7 +685,7 @@ class Kyunnect(QMainWindow):
         geometry = settings.value("geometry")
         state = settings.value("windowState")
         splitter_sizes = settings.value("splitterSizes")
-        
+
         if geometry:
             self.restoreGeometry(geometry)
         if state:
@@ -682,4 +706,4 @@ def run_app():
     sys.exit(app.exec())
 
 if __name__ == "__main__":
-    run_app() 
+    run_app()
