@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Kyunnect
+Exec=kyunnect
+Icon=io.github.kyuyrii.kyunnect
+StartupWMClass=kyunnect
+Categories=Utility;
+Keywords=snap;sandbox;plug;interface;
+Type=Application
+StartupNotify=false
+Terminal=false
+Comment=A Snap plug manager
+Comment[pt_BR]=Um gerenciador de plugs do Snap
+Comment[es_ES]=Un gestor de plugs de Snap
