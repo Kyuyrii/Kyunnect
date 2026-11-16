@@ -416,13 +416,6 @@ class Sidebar(Gtk.ScrolledWindow):
         self.listbox.unselect_all()
         self._suppress = False
 
-    def select_first(self):
-        self._suppress = True
-        first = self.listbox.get_row_at_index(0)
-        if first is not None:
-            self.listbox.select_row(first)
-        self._suppress = False
-
 
 # ---------- Detail panel ----------
 class DetailPanel(Gtk.Box):
@@ -458,6 +451,40 @@ class DetailPanel(Gtk.Box):
         global_scroll.add(self.global_list)
         global_box.pack_start(global_scroll, True, True, 0)
         self.stack.add_named(global_box, "global")
+
+        # Welcome page
+        welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        welcome_box.set_valign(Gtk.Align.CENTER)
+        welcome_box.set_halign(Gtk.Align.CENTER)
+
+        welcome_icon = Gtk.Image()
+        welcome_icon.set_size_request(256, 256)
+        icon_path = Path(__file__).resolve().parent / f"{APP_ID}.svg"
+        loaded = False
+        if icon_path.is_file():
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 256, 256, True)
+                welcome_icon.set_from_pixbuf(pixbuf)
+                loaded = True
+            except Exception as e:
+                print(f"[Kyunnect]: failed to load local icon: {e}")
+
+        if not loaded:
+            welcome_icon.set_pixel_size(256)
+            icon_theme = Gtk.IconTheme.get_default()
+            if icon_theme.has_icon(APP_ID):
+                welcome_icon.set_from_icon_name(APP_ID, Gtk.IconSize.DIALOG)
+            else:
+                welcome_icon.set_from_icon_name("application-x-executable", Gtk.IconSize.DIALOG)
+        welcome_box.pack_start(welcome_icon, False, False, 0)
+
+        welcome_label = Gtk.Label()
+        welcome_label.set_markup(
+            f"<span size='x-large' weight='bold'>{GLib.markup_escape_text(tr('WELCOME'))}</span>"
+        )
+        welcome_box.pack_start(welcome_label, False, False, 0)
+
+        self.stack.add_named(welcome_box, "welcome")
 
     def set_global_plug(self, plug):
         self._global_plug = plug
@@ -615,8 +642,8 @@ class KyunnectWindow(Gtk.Window):
         toolbar.set_margin_start(8)
         toolbar.set_margin_end(8)
 
-        self.title_label = Gtk.Label(label=tr("GLOBAL_NAME"), xalign=0)
-        self.title_label.set_markup(f"<b>{GLib.markup_escape_text(tr('GLOBAL_NAME'))}</b>")
+        self.title_label = Gtk.Label(label=tr("APP_NAME"), xalign=0)
+        self.title_label.set_markup(f"<b>{GLib.markup_escape_text(tr('APP_NAME'))}</b>")
         self.title_label.set_hexpand(True)
         self.title_label.set_ellipsize(3)
         toolbar.pack_start(self.title_label, True, True, 0)
@@ -656,12 +683,12 @@ class KyunnectWindow(Gtk.Window):
         self.connect("destroy", Gtk.main_quit)
         self.show_all()
 
-        # Start on Global
-        self.sidebar.select_first()
-        self._current_app = tr("GLOBAL_NAME")
+        self.sidebar.clear_selection()
+        self._current_app = None
+        self.detail.app_name = None
         self.detail.set_global_plug(self.global_combo.get_active_text())
-        self.detail.update_for_app(tr("GLOBAL_NAME"))
-        self.title_label.set_markup(f"<b>{GLib.markup_escape_text(tr('GLOBAL_NAME'))}</b>")
+        self.detail.stack.set_visible_child_name("welcome")
+        self.title_label.set_markup(f"<b>{GLib.markup_escape_text(tr('APP_NAME'))}</b>")
         self._update_apply_sensitivity()
         self._update_toolbar_visibility()
 

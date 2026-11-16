@@ -7,6 +7,7 @@ TEXT_PLEASE_WAIT = "Please wait..."
 TEXT_NO_PLUGS_FOUND = "No plugs found."
 TEXT_GLOBAL_PLUG_LABEL = "Plug:"
 TEXT_NO_APPS_FOR_PLUG = "No apps expose this plug."
+WELCOME = "Welcome"
 
 PLUG_AUDIO_PLAYBACK = "Allows audio playback via supporting services"
 PLUG_AUDIO_RECORD = "Allows audio recording via supporting services"
