@@ -64,6 +64,6 @@ exec "$HERE/usr/bin/Kyunnect/Kyunnect" "$@"
 EOF
 chmod +x AppDir/AppRun
 
-ARCH=x86_64 ./appimagetool --no-appstream AppDir "${APP_NAME}-x86_64.AppImage"
+APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 ./appimagetool --no-appstream AppDir "${APP_NAME}-x86_64.AppImage"
 
 echo "AppImage created: ${APP_NAME}-x86_64.AppImage"
