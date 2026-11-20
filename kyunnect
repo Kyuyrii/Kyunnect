@@ -20,7 +20,7 @@ except ImportError:
     print("tomlkit not found.")
     sys.exit(1)
 
-__version__ = "1.0"
+__version__ = "1.2"
 APP_ID = "io.github.kyuyrii.kyunnect"
 
 # ---------- Directories ----------
@@ -350,8 +350,6 @@ def make_global_sidebar_row():
 
 def make_plug_row(plug, description, is_connected):
     row = Gtk.ListBoxRow()
-    row.set_selectable(False)
-    row.set_activatable(False)
     hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
     hbox.set_margin_top(8)
     hbox.set_margin_bottom(8)
@@ -366,11 +364,10 @@ def make_plug_row(plug, description, is_connected):
     desc_label.set_line_wrap(True)
     desc_label.set_max_width_chars(50)
     vbox.pack_start(desc_label, False, False, 0)
-    name_label = Gtk.Label(xalign=0)
-    name_label.set_markup(f"<small><span foreground='#888888'>{GLib.markup_escape_text(plug)}</span></small>")
+    name_label = Gtk.Label(label=plug, xalign=0)
     vbox.pack_start(name_label, False, False, 0)
     hbox.pack_start(vbox, True, True, 0)
-    switch = Gtk.Switch()
+    switch = Gtk.CheckButton()
     switch.set_active(is_connected)
     switch.set_valign(Gtk.Align.CENTER)
     hbox.pack_end(switch, False, False, 0)
@@ -547,8 +544,6 @@ class DetailPanel(Gtk.Box):
             self._global_original[app_name] = is_connected
 
             row = Gtk.ListBoxRow()
-            row.set_selectable(False)
-            row.set_activatable(False)
             hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             hbox.set_margin_top(8)
             hbox.set_margin_bottom(8)
@@ -558,11 +553,10 @@ class DetailPanel(Gtk.Box):
             vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             vbox.set_hexpand(True)
             vbox.pack_start(Gtk.Label(label=app_name, xalign=0), False, False, 0)
-            plug_label = Gtk.Label(xalign=0)
-            plug_label.set_markup(f"<small><span foreground='#888888'>{GLib.markup_escape_text(app_name + ':' + plug)}</span></small>")
+            plug_label = Gtk.Label(label=f"{app_name}:{plug}", xalign=0)
             vbox.pack_start(plug_label, False, False, 0)
             hbox.pack_start(vbox, True, True, 0)
-            switch = Gtk.Switch()
+            switch = Gtk.CheckButton()
             switch.set_active(is_connected)
             switch.set_valign(Gtk.Align.CENTER)
             switch.connect("notify::active", self._on_switch_toggled)
@@ -681,13 +675,18 @@ class KyunnectWindow(Gtk.Window):
         self.paned.pack2(self.detail, True, False)
 
         self.connect("destroy", Gtk.main_quit)
+
+        self.sidebar._suppress = True
+        self.detail.stack.set_transition_type(Gtk.StackTransitionType.NONE)
         self.show_all()
 
         self.sidebar.clear_selection()
+        self.set_focus(None)
         self._current_app = None
         self.detail.app_name = None
         self.detail.set_global_plug(self.global_combo.get_active_text())
         self.detail.stack.set_visible_child_name("welcome")
+        self.detail.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.title_label.set_markup(f"<b>{GLib.markup_escape_text(tr('APP_NAME'))}</b>")
         self._update_apply_sensitivity()
         self._update_toolbar_visibility()
