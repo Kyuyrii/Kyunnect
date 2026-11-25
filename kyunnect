@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Kyunnect GTK3
+# Kyunnect PyQt6
 
 import os
 import sys
@@ -10,9 +10,14 @@ import subprocess
 import threading
 from pathlib import Path
 
-import gi
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GLib, GdkPixbuf
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QSettings, QSize
+from PyQt6.QtGui import QIcon, QPixmap, QFont
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QListWidget, QListWidgetItem, QPushButton, QComboBox,
+    QCheckBox, QSplitter, QStackedWidget, QScrollArea,
+    QSizePolicy,
+)
 
 try:
     import tomlkit
@@ -20,7 +25,7 @@ except ImportError:
     print("tomlkit not found.")
     sys.exit(1)
 
-__version__ = "1.3"
+__version__ = "2.0"
 APP_ID = "io.github.kyuyrii.kyunnect"
 
 # ---------- Directories ----------
@@ -48,36 +53,36 @@ RUNTIME_NOTES = {"base", "kernel", "gadget", "core", "snapd"}
 
 # ---------- Plug icons ----------
 PLUG_ICONS = {
-    "audio-playback": "audio-volume-high-symbolic",
-    "audio-record": "audio-input-microphone-symbolic",
-    "bluetooth-control": "bluetooth-symbolic",
-    "bluez": "bluetooth-symbolic",
-    "camera": "camera-photo-symbolic",
-    "cups-control": "printer-symbolic",
-    "desktop": "preferences-desktop-symbolic",
-    "hardware-observe": "computer-symbolic",
-    "home": "user-home-symbolic",
-    "joystick": "input-gaming-symbolic",
-    "media-control": "media-playback-start-symbolic",
-    "mount-observe": "drive-harddisk-symbolic",
-    "network": "network-transmit-receive-symbolic",
-    "network-bind": "network-server-symbolic",
-    "network-control": "preferences-system-network-symbolic",
-    "network-manager": "network-wireless-symbolic",
-    "opengl": "video-display-symbolic",
-    "pipewire": "audio-x-generic-symbolic",
-    "process-control": "system-run-symbolic",
-    "pulseaudio": "audio-card-symbolic",
-    "raw-usb": "media-removable-symbolic",
-    "removable-media": "drive-removable-media-symbolic",
-    "screen-inhibit-control": "preferences-desktop-screensaver-symbolic",
-    "system-observe": "utilities-system-monitor-symbolic",
-    "udisks2": "drive-harddisk-symbolic",
-    "uhid": "input-keyboard-symbolic",
-    "umu-support": "applications-games-symbolic",
-    "upower-observe": "battery-symbolic",
-    "wayland": "video-display-symbolic",
-    "x11": "video-display-symbolic",
+    "audio-playback": "audio-volume-high",
+    "audio-record": "audio-input-microphone",
+    "bluetooth-control": "bluetooth",
+    "bluez": "bluetooth",
+    "camera": "camera-photo",
+    "cups-control": "printer",
+    "desktop": "preferences-desktop",
+    "hardware-observe": "computer",
+    "home": "user-home",
+    "joystick": "input-gaming",
+    "media-control": "media-playback-start",
+    "mount-observe": "drive-harddisk",
+    "network": "network-transmit-receive",
+    "network-bind": "network-server",
+    "network-control": "preferences-system-network",
+    "network-manager": "network-wireless",
+    "opengl": "video-display",
+    "pipewire": "audio-x-generic",
+    "process-control": "system-run",
+    "pulseaudio": "audio-card",
+    "raw-usb": "media-removable",
+    "removable-media": "drive-removable-media",
+    "screen-inhibit-control": "preferences-desktop-screensaver",
+    "system-observe": "utilities-system-monitor",
+    "udisks2": "drive-harddisk",
+    "uhid": "input-keyboard",
+    "umu-support": "applications-games",
+    "upower-observe": "battery",
+    "wayland": "video-display",
+    "x11": "video-display",
 }
 
 
@@ -282,157 +287,162 @@ def get_plug_icon(plug):
 
 
 # ---------- Async pkexec ----------
-def run_pkexec_commands(commands, callback):
+class _Bridge(QObject):
+    done = pyqtSignal(bool)
+
+
+def run_pkexec_commands(commands, bridge):
     def worker():
         if not commands:
-            GLib.idle_add(callback, True)
+            bridge.done.emit(True)
             return
         joined = " && ".join(" ".join(c) for c in commands)
         full = ["pkexec", "sh", "-c", joined]
         try:
             subprocess.run(full, check=True)
-            GLib.idle_add(callback, True)
+            bridge.done.emit(True)
         except subprocess.CalledProcessError:
-            GLib.idle_add(callback, False)
+            bridge.done.emit(False)
         except Exception as e:
             print(f"[Kyunnect]: pkexec error: {e}")
-            GLib.idle_add(callback, False)
+            bridge.done.emit(False)
     t = threading.Thread(target=worker, daemon=True)
     t.start()
 
 
 # ---------- Helpers ----------
-def make_icon_widget(icon_spec, size=24):
-    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-    box.set_size_request(size, size)
-    box.set_halign(Gtk.Align.CENTER)
-    box.set_valign(Gtk.Align.CENTER)
-    box.set_vexpand(False)
-    box.set_hexpand(False)
-
+def make_icon_widget(icon_spec, size=20):
+    lbl = QLabel()
+    lbl.setFixedSize(size, size)
+    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     if icon_spec and os.path.isabs(icon_spec) and os.path.isfile(icon_spec):
-        try:
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(icon_spec, size, size, True)
-            image = Gtk.Image.new_from_pixbuf(pixbuf)
-        except Exception:
-            image = Gtk.Image.new_from_icon_name("application-x-executable", Gtk.IconSize.DND)
-            image.set_pixel_size(size)
-    elif icon_spec:
-        image = Gtk.Image.new_from_icon_name(icon_spec, Gtk.IconSize.DND)
-        image.set_pixel_size(size)
+        pix = QPixmap(icon_spec)
+        if not pix.isNull():
+            lbl.setPixmap(pix.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
+                                     Qt.TransformationMode.SmoothTransformation))
+            return lbl
+    icon = QIcon.fromTheme(icon_spec or "application-x-executable")
+    if not icon.isNull():
+        pix = icon.pixmap(size, size)
+        if not pix.isNull():
+            lbl.setPixmap(pix)
+        else:
+            lbl.setText("?")
     else:
-        image = Gtk.Image.new_from_icon_name("application-x-executable", Gtk.IconSize.DND)
-        image.set_pixel_size(size)
-
-    image.set_size_request(size, size)
-    image.set_valign(Gtk.Align.CENTER)
-    image.set_halign(Gtk.Align.CENTER)
-    image.set_vexpand(False)
-    box.pack_start(image, False, False, 0)
-    return box
+        lbl.setText("?")
+    return lbl
 
 
 def make_sidebar_row(app_name, icon_spec):
-    row = Gtk.ListBoxRow()
-    hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    hbox.set_margin_top(8)
-    hbox.set_margin_bottom(8)
-    hbox.set_margin_start(10)
-    hbox.set_margin_end(10)
-    hbox.pack_start(make_icon_widget(icon_spec, 24), False, False, 0)
-    label = Gtk.Label(label=app_name, xalign=0)
-    label.set_ellipsize(3)
-    hbox.pack_start(label, True, True, 0)
-    row.add(hbox)
-    row.app_name = app_name
-    return row
+    widget = QWidget()
+    hbox = QHBoxLayout(widget)
+    hbox.setContentsMargins(8, 4, 8, 4)
+    hbox.setSpacing(8)
+    hbox.addWidget(make_icon_widget(icon_spec, 20), 0)
+    label = QLabel(app_name)
+    label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    hbox.addWidget(label, 1)
+    return widget
 
 
 def make_global_sidebar_row():
-    row = Gtk.ListBoxRow()
-    hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    hbox.set_margin_top(8)
-    hbox.set_margin_bottom(8)
-    hbox.set_margin_start(10)
-    hbox.set_margin_end(10)
-    hbox.pack_start(make_icon_widget("preferences-system", 24), False, False, 0)
-    hbox.pack_start(Gtk.Label(label=tr("GLOBAL_NAME"), xalign=0), True, True, 0)
-    row.add(hbox)
-    row.app_name = tr("GLOBAL_NAME")
-    return row
+    widget = QWidget()
+    hbox = QHBoxLayout(widget)
+    hbox.setContentsMargins(8, 4, 8, 4)
+    hbox.setSpacing(8)
+    hbox.addWidget(make_icon_widget("preferences-system", 20), 0)
+    label = QLabel(tr("GLOBAL_NAME"))
+    label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    hbox.addWidget(label, 1)
+    return widget
 
 
 def make_plug_row(plug, description, is_connected):
-    row = Gtk.ListBoxRow()
-    hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    hbox.set_margin_top(8)
-    hbox.set_margin_bottom(8)
-    hbox.set_margin_start(14)
-    hbox.set_margin_end(14)
+    widget = QWidget()
+    hbox = QHBoxLayout(widget)
+    hbox.setContentsMargins(8, 4, 8, 4)
+    hbox.setSpacing(8)
 
-    hbox.pack_start(make_icon_widget(get_plug_icon(plug), 20), False, False, 0)
+    switch = QCheckBox()
+    switch.setChecked(is_connected)
+    hbox.addWidget(switch, 0, Qt.AlignmentFlag.AlignVCenter)
 
-    vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-    vbox.set_hexpand(True)
-    desc_label = Gtk.Label(label=description, xalign=0)
-    desc_label.set_line_wrap(True)
-    desc_label.set_max_width_chars(50)
-    vbox.pack_start(desc_label, False, False, 0)
-    name_label = Gtk.Label(label=plug, xalign=0)
-    vbox.pack_start(name_label, False, False, 0)
-    hbox.pack_start(vbox, True, True, 0)
-    switch = Gtk.CheckButton()
-    switch.set_active(is_connected)
-    switch.set_valign(Gtk.Align.CENTER)
-    hbox.pack_end(switch, False, False, 0)
-    row.add(hbox)
-    row.plug = plug
-    row.original = is_connected
-    row.switch = switch
-    return row
+    hbox.addWidget(make_icon_widget(get_plug_icon(plug), 16), 0)
+
+    vbox = QVBoxLayout()
+    vbox.setSpacing(0)
+    desc_label = QLabel(description)
+    vbox.addWidget(desc_label)
+    name_label = QLabel(plug)
+    vbox.addWidget(name_label)
+    hbox.addLayout(vbox, 1)
+
+    widget.switch = switch
+    return widget
 
 
 # ---------- Sidebar ----------
-class Sidebar(Gtk.ScrolledWindow):
-    def __init__(self, on_select):
+class Sidebar(QScrollArea):
+    selection_changed = pyqtSignal(str)
+
+    def __init__(self):
         super().__init__()
-        self.on_select = on_select
         self._suppress = False
-        self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.listbox = Gtk.ListBox()
-        self.listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        self.listbox.connect("row-selected", self._on_row_selected)
-        self.add(self.listbox)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self.list = QListWidget()
+        self.list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.list.currentItemChanged.connect(self._on_current_changed)
+        self.setWidget(self.list)
+
         self.reload()
 
     def reload(self):
         self._suppress = True
-        for child in self.listbox.get_children():
-            self.listbox.remove(child)
-        self.listbox.add(make_global_sidebar_row())
+        self.list.clear()
+
+        item = QListWidgetItem()
+        item.setData(Qt.ItemDataRole.UserRole, tr("GLOBAL_NAME"))
+        w = make_global_sidebar_row()
+        item.setSizeHint(w.sizeHint())
+        self.list.addItem(item)
+        self.list.setItemWidget(item, w)
+
         for app_name, icon_spec in get_app_info_cached():
-            self.listbox.add(make_sidebar_row(app_name, icon_spec))
-        self.listbox.show_all()
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, app_name)
+            w = make_sidebar_row(app_name, icon_spec)
+            item.setSizeHint(w.sizeHint())
+            self.list.addItem(item)
+            self.list.setItemWidget(item, w)
+
         self._suppress = False
 
-    def _on_row_selected(self, listbox, row):
-        if self._suppress or row is None:
+    def _on_current_changed(self, current, _previous):
+        if self._suppress or current is None:
             return
-        app_name = getattr(row, "app_name", None)
+        app_name = current.data(Qt.ItemDataRole.UserRole)
         if app_name:
-            self.on_select(app_name)
+            self.selection_changed.emit(app_name)
 
-    def clear_selection(self):
+    def select_first(self):
         self._suppress = True
-        self.listbox.unselect_all()
+        self.list.setCurrentRow(0)
         self._suppress = False
+        item = self.list.item(0)
+        if item is not None:
+            app_name = item.data(Qt.ItemDataRole.UserRole)
+            if app_name:
+                self.selection_changed.emit(app_name)
 
 
 # ---------- Detail panel ----------
-class DetailPanel(Gtk.Box):
-    def __init__(self, on_state_changed):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
-        self.on_state_changed = on_state_changed
+class DetailPanel(QWidget):
+    state_changed = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
         self.app_name = None
         self.rows = []
         self._global_rows = {}
@@ -440,62 +450,27 @@ class DetailPanel(Gtk.Box):
         self._global_plug = None
         self._updating_global = False
 
-        self.stack = Gtk.Stack()
-        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        self.pack_start(self.stack, True, True, 0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # Plugs page
-        self.plug_list = Gtk.ListBox()
-        self.plug_list.set_selection_mode(Gtk.SelectionMode.NONE)
-        plug_scroll = Gtk.ScrolledWindow()
-        plug_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        plug_scroll.add(self.plug_list)
-        self.stack.add_named(plug_scroll, "plugs")
+        self.stack = QStackedWidget()
+        layout.addWidget(self.stack)
 
-        # Global page
-        global_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.global_list = Gtk.ListBox()
-        self.global_list.set_selection_mode(Gtk.SelectionMode.NONE)
-        global_scroll = Gtk.ScrolledWindow()
-        global_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        global_scroll.set_vexpand(True)
-        global_scroll.add(self.global_list)
-        global_box.pack_start(global_scroll, True, True, 0)
-        self.stack.add_named(global_box, "global")
+        self.plug_list = QListWidget()
+        self.plug_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        plug_scroll = QScrollArea()
+        plug_scroll.setWidgetResizable(True)
+        plug_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        plug_scroll.setWidget(self.plug_list)
+        self.stack.addWidget(plug_scroll)
 
-        # Welcome page
-        welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        welcome_box.set_valign(Gtk.Align.CENTER)
-        welcome_box.set_halign(Gtk.Align.CENTER)
-
-        welcome_icon = Gtk.Image()
-        welcome_icon.set_size_request(256, 256)
-        icon_path = Path(__file__).resolve().parent / f"{APP_ID}.svg"
-        loaded = False
-        if icon_path.is_file():
-            try:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(icon_path), 256, 256, True)
-                welcome_icon.set_from_pixbuf(pixbuf)
-                loaded = True
-            except Exception as e:
-                print(f"[Kyunnect]: failed to load local icon: {e}")
-
-        if not loaded:
-            welcome_icon.set_pixel_size(256)
-            icon_theme = Gtk.IconTheme.get_default()
-            if icon_theme.has_icon(APP_ID):
-                welcome_icon.set_from_icon_name(APP_ID, Gtk.IconSize.DIALOG)
-            else:
-                welcome_icon.set_from_icon_name("application-x-executable", Gtk.IconSize.DIALOG)
-        welcome_box.pack_start(welcome_icon, False, False, 0)
-
-        welcome_label = Gtk.Label()
-        welcome_label.set_markup(
-            f"<span size='x-large' weight='bold'>{GLib.markup_escape_text(tr('WELCOME'))}</span>"
-        )
-        welcome_box.pack_start(welcome_label, False, False, 0)
-
-        self.stack.add_named(welcome_box, "welcome")
+        self.global_list = QListWidget()
+        self.global_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        global_scroll = QScrollArea()
+        global_scroll.setWidgetResizable(True)
+        global_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        global_scroll.setWidget(self.global_list)
+        self.stack.addWidget(global_scroll)
 
     def set_global_plug(self, plug):
         self._global_plug = plug
@@ -504,42 +479,42 @@ class DetailPanel(Gtk.Box):
     def update_for_app(self, app_name):
         self.app_name = app_name
         if app_name == tr("GLOBAL_NAME"):
-            self.stack.set_visible_child_name("global")
+            self.stack.setCurrentIndex(1)
             self._populate_global_list()
             return
 
-        for child in self.plug_list.get_children():
-            self.plug_list.remove(child)
+        self.plug_list.clear()
         self.rows = []
         status = get_plug_status_cached(app_name)
         visible = sorted(p for p in status if p in VISIBLE_PLUGS)
 
         if not visible:
-            row = Gtk.ListBoxRow()
-            lbl = Gtk.Label(label=tr("TEXT_NO_PLUGS_FOUND"))
-            lbl.set_margin_top(24)
-            lbl.set_margin_bottom(24)
-            row.add(lbl)
-            self.plug_list.add(row)
+            item = QListWidgetItem()
+            lbl = QLabel(tr("TEXT_NO_PLUGS_FOUND"))
+            lbl.setContentsMargins(0, 24, 0, 24)
+            item.setSizeHint(lbl.sizeHint())
+            self.plug_list.addItem(item)
+            self.plug_list.setItemWidget(item, lbl)
         else:
             for plug in visible:
                 desc = get_plug_description(plug)
-                row = make_plug_row(plug, desc, status[plug])
-                row.switch.connect("notify::active", self._on_switch_toggled)
-                self.rows.append(row)
-                self.plug_list.add(row)
+                w = make_plug_row(plug, desc, status[plug])
+                w.switch.stateChanged.connect(lambda _s: self.state_changed.emit())
+                item = QListWidgetItem()
+                item.setSizeHint(w.sizeHint())
+                self.plug_list.addItem(item)
+                self.plug_list.setItemWidget(item, w)
+                self.rows.append({"plug": plug, "switch": w.switch, "original": status[plug]})
 
-        self.plug_list.show_all()
-        self.stack.set_visible_child_name("plugs")
-        self.on_state_changed()
+        self.stack.setCurrentIndex(0)
+        self.state_changed.emit()
 
     def _populate_global_list(self):
         if self._updating_global:
             return
         self._updating_global = True
 
-        for child in self.global_list.get_children():
-            self.global_list.remove(child)
+        self.global_list.clear()
         self._global_rows = {}
         self._global_original = {}
 
@@ -557,51 +532,49 @@ class DetailPanel(Gtk.Box):
             is_connected = status[plug]
             self._global_original[app_name] = is_connected
 
-            row = Gtk.ListBoxRow()
-            hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            hbox.set_margin_top(8)
-            hbox.set_margin_bottom(8)
-            hbox.set_margin_start(14)
-            hbox.set_margin_end(14)
-            hbox.pack_start(make_icon_widget(icon_spec, 20), False, False, 0)
-            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            vbox.set_hexpand(True)
-            vbox.pack_start(Gtk.Label(label=app_name, xalign=0), False, False, 0)
-            plug_label = Gtk.Label(label=f"{app_name}:{plug}", xalign=0)
-            vbox.pack_start(plug_label, False, False, 0)
-            hbox.pack_start(vbox, True, True, 0)
-            switch = Gtk.CheckButton()
-            switch.set_active(is_connected)
-            switch.set_valign(Gtk.Align.CENTER)
-            switch.connect("notify::active", self._on_switch_toggled)
-            hbox.pack_end(switch, False, False, 0)
-            row.add(hbox)
-            self.global_list.add(row)
+            w = QWidget()
+            hbox = QHBoxLayout(w)
+            hbox.setContentsMargins(8, 4, 8, 4)
+            hbox.setSpacing(8)
+
+            switch = QCheckBox()
+            switch.setChecked(is_connected)
+            switch.stateChanged.connect(lambda _s: self.state_changed.emit())
+            hbox.addWidget(switch, 0, Qt.AlignmentFlag.AlignVCenter)
+
+            hbox.addWidget(make_icon_widget(icon_spec, 16), 0)
+
+            vbox = QVBoxLayout()
+            vbox.setSpacing(0)
+            vbox.addWidget(QLabel(app_name))
+            vbox.addWidget(QLabel(f"{app_name}:{plug}"))
+            hbox.addLayout(vbox, 1)
+
+            item = QListWidgetItem()
+            item.setSizeHint(w.sizeHint())
+            self.global_list.addItem(item)
+            self.global_list.setItemWidget(item, w)
             self._global_rows[app_name] = switch
 
         if not any_app:
-            row = Gtk.ListBoxRow()
-            lbl = Gtk.Label(label=tr("TEXT_NO_APPS_FOR_PLUG"))
-            lbl.set_margin_top(24)
-            lbl.set_margin_bottom(24)
-            row.add(lbl)
-            self.global_list.add(row)
+            item = QListWidgetItem()
+            lbl = QLabel(tr("TEXT_NO_APPS_FOR_PLUG"))
+            lbl.setContentsMargins(0, 24, 0, 24)
+            item.setSizeHint(lbl.sizeHint())
+            self.global_list.addItem(item)
+            self.global_list.setItemWidget(item, lbl)
 
-        self.global_list.show_all()
         self._updating_global = False
-        self.on_state_changed()
-
-    def _on_switch_toggled(self, switch, _pspec):
-        self.on_state_changed()
+        self.state_changed.emit()
 
     def has_changes(self):
         if self.app_name == tr("GLOBAL_NAME"):
             for app_name, switch in self._global_rows.items():
-                if switch.get_active() != self._global_original.get(app_name, False):
+                if switch.isChecked() != self._global_original.get(app_name, False):
                     return True
             return False
         for row in self.rows:
-            if row.switch.get_active() != row.original:
+            if row["switch"].isChecked() != row["original"]:
                 return True
         return False
 
@@ -614,178 +587,197 @@ class DetailPanel(Gtk.Box):
             if not plug:
                 return commands
             for app_name, switch in self._global_rows.items():
-                current = switch.get_active()
+                current = switch.isChecked()
                 original = self._global_original.get(app_name, False)
                 if current != original:
                     action = "connect" if current else "disconnect"
                     commands.append(["snap", action, f"{app_name}:{plug}"])
         else:
             for row in self.rows:
-                current = row.switch.get_active()
-                if current != row.original:
+                current = row["switch"].isChecked()
+                if current != row["original"]:
                     action = "connect" if current else "disconnect"
-                    commands.append(["snap", action, f"{self.app_name}:{row.plug}"])
+                    commands.append(["snap", action, f"{self.app_name}:{row['plug']}"])
         return commands
 
 
 # ---------- Main window ----------
-class KyunnectWindow(Gtk.Window):
+class KyunnectWindow(QMainWindow):
     def __init__(self):
-        super().__init__(title=tr("APP_NAME"))
+        super().__init__()
+        self.setWindowTitle(tr("APP_NAME"))
         icon_path = Path(__file__).resolve().parent / f"{APP_ID}.svg"
         if icon_path.is_file():
-            self.set_icon_from_file(str(icon_path))
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         w = _settings.get("window_width", 900)
         h = _settings.get("window_height", 640)
-        self.set_default_size(w, h)
-        self.set_size_request(600, 400)
+        self.resize(w, h)
+        self.setMinimumSize(600, 400)
 
         self._saved_width = w
         self._saved_height = h
-        self.connect("configure-event", self._on_configure)
-
         self._current_app = None
+        self._bridge = _Bridge()
+        self._bridge.done.connect(self._on_pkexec_done)
 
-        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.add(root)
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
         # Toolbar
-        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        toolbar.set_margin_top(6)
-        toolbar.set_margin_bottom(6)
-        toolbar.set_margin_start(8)
-        toolbar.set_margin_end(8)
+        toolbar = QWidget()
+        tb = QHBoxLayout(toolbar)
+        tb.setContentsMargins(8, 6, 8, 6)
+        tb.setSpacing(8)
 
-        self.title_label = Gtk.Label(label=tr("APP_NAME"), xalign=0)
-        self.title_label.set_markup(f"<b>{GLib.markup_escape_text(tr('APP_NAME'))}</b>")
-        self.title_label.set_hexpand(True)
-        self.title_label.set_ellipsize(3)
-        toolbar.pack_start(self.title_label, True, True, 0)
+        self.title_label = QLabel()
+        f = QFont()
+        f.setBold(True)
+        self.title_label.setFont(f)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(self.title_label, 1)
 
-        self.plug_label = Gtk.Label(label=tr("TEXT_GLOBAL_PLUG_LABEL"), xalign=0)
-        self.plug_label.set_no_show_all(True)
-        toolbar.pack_start(self.plug_label, False, False, 0)
+        self.plug_label = QLabel(tr("TEXT_GLOBAL_PLUG_LABEL"))
+        self.plug_label.setVisible(False)
+        tb.addWidget(self.plug_label, 0)
 
-        self.global_combo = Gtk.ComboBoxText()
+        self.global_combo = QComboBox()
         for plug in VISIBLE_PLUGS:
-            self.global_combo.append_text(plug)
-        self.global_combo.set_active(0)
-        self.global_combo.set_no_show_all(True)
-        self.global_combo.connect("changed", self._on_global_plug_changed)
-        toolbar.pack_start(self.global_combo, False, False, 0)
+            self.global_combo.addItem(plug)
+        self.global_combo.setCurrentIndex(0)
+        self.global_combo.setVisible(False)
+        self.global_combo.currentIndexChanged.connect(self._on_global_plug_changed)
+        tb.addWidget(self.global_combo, 0)
 
-        self.apply_btn = Gtk.Button(label=tr("TEXT_APPLY"))
-        self.apply_btn.get_style_context().add_class("suggested-action")
-        self.apply_btn.connect("clicked", self._on_apply)
-        self.apply_btn.set_sensitive(False)
-        toolbar.pack_end(self.apply_btn, False, False, 0)
+        self.apply_btn = QPushButton(tr("TEXT_APPLY"))
+        self.apply_btn.setEnabled(False)
+        self.apply_btn.clicked.connect(self._on_apply)
+        tb.addWidget(self.apply_btn, 0)
 
-        root.pack_start(toolbar, False, False, 0)
+        root.addWidget(toolbar)
 
-        # Paned
-        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self.paned.set_position(260)
-        root.pack_start(self.paned, True, True, 0)
+        # Splitter
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        root.addWidget(self.splitter, 1)
 
-        self.sidebar = Sidebar(self._on_select)
-        self.sidebar.set_size_request(180, -1)
-        self.paned.pack1(self.sidebar, False, False)
+        self.sidebar = Sidebar()
+        self.sidebar.setMinimumWidth(180)
+        self.sidebar.selection_changed.connect(self._on_select)
+        self.splitter.addWidget(self.sidebar)
 
-        self.detail = DetailPanel(self._update_apply_sensitivity)
-        self.paned.pack2(self.detail, True, False)
+        self.detail = DetailPanel()
+        self.detail.setMinimumWidth(320)
+        self.detail.state_changed.connect(self._update_apply_sensitivity)
+        self.splitter.addWidget(self.detail)
 
-        self.connect("delete-event", self._on_delete_event)
-        self.connect("destroy", Gtk.main_quit)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
 
-        self.sidebar._suppress = True
-        self.detail.stack.set_transition_type(Gtk.StackTransitionType.NONE)
-        self.show_all()
+        self.splitter.setSizes([260, 640])
 
-        self.sidebar.clear_selection()
-        self.set_focus(None)
+        self._qsettings = QSettings("Kyunnect")
+        saved_sizes = self._qsettings.value("splitterSizes")
+        if saved_sizes:
+            try:
+                sizes = [int(s) for s in saved_sizes]
+                if len(sizes) == 2:
+                    self.splitter.setSizes(sizes)
+            except (TypeError, ValueError):
+                pass
+
         self._current_app = None
         self.detail.app_name = None
-        self.detail.set_global_plug(self.global_combo.get_active_text())
-        self.detail.stack.set_visible_child_name("welcome")
-        self.detail.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        self.title_label.set_markup(f"<b>{GLib.markup_escape_text(tr('APP_NAME'))}</b>")
+        self.detail.set_global_plug(self.global_combo.currentText())
+        self.title_label.setText(tr("APP_NAME"))
         self._update_apply_sensitivity()
         self._update_toolbar_visibility()
 
+        self.sidebar.select_first()
+
         if _settings.get("window_maximized", False):
-            self.maximize()
+            self.showMaximized()
+        else:
+            self.show()
 
-    def _on_configure(self, _widget, event):
-        if not self.is_maximized():
-            self._saved_width = event.width
-            self._saved_height = event.height
-        return False
+    def resizeEvent(self, event):
+        if not self.isMaximized():
+            self._saved_width = self.width()
+            self._saved_height = self.height()
+        super().resizeEvent(event)
 
-    def _on_delete_event(self, _widget, _event):
+    def closeEvent(self, event):
         save_settings({
             "window_width": self._saved_width,
             "window_height": self._saved_height,
-            "window_maximized": self.is_maximized(),
+            "window_maximized": self.isMaximized(),
         })
-        return False
+        self._qsettings.setValue("splitterSizes", self.splitter.sizes())
+        event.accept()
 
     def _update_toolbar_visibility(self):
         is_global = self._current_app == tr("GLOBAL_NAME")
-        self.plug_label.set_visible(is_global)
-        self.global_combo.set_visible(is_global)
+        self.plug_label.setVisible(is_global)
+        self.global_combo.setVisible(is_global)
 
-    def _on_global_plug_changed(self, combo):
-        self.detail.set_global_plug(combo.get_active_text())
+    def _on_global_plug_changed(self, _index):
+        self.detail.set_global_plug(self.global_combo.currentText())
 
     def _on_select(self, app_name):
         self._current_app = app_name
-        self.title_label.set_markup(f"<b>{GLib.markup_escape_text(app_name)}</b>")
+        self.title_label.setText(app_name)
         self.detail.update_for_app(app_name)
         self._update_apply_sensitivity()
         self._update_toolbar_visibility()
 
     def _update_apply_sensitivity(self):
-        self.apply_btn.set_sensitive(self.detail.has_changes())
+        self.apply_btn.setEnabled(self.detail.has_changes())
 
-    def _on_apply(self, _button):
+    def _on_apply(self, _checked=False):
         commands = self.detail.collect_commands()
         if not commands:
             self._update_apply_sensitivity()
             return
-        self.apply_btn.set_sensitive(False)
-        self.apply_btn.set_label(tr("TEXT_PLEASE_WAIT"))
+        self.apply_btn.setEnabled(False)
+        self.apply_btn.setText(tr("TEXT_PLEASE_WAIT"))
 
-        self.sidebar.set_sensitive(False)
-        self.detail.set_sensitive(False)
-        self.global_combo.set_sensitive(False)
+        self.sidebar.setEnabled(False)
+        self.detail.setEnabled(False)
+        self.global_combo.setEnabled(False)
 
-        def done(ok):
-            self.apply_btn.set_label(tr("TEXT_APPLY"))
-            self.sidebar.set_sensitive(True)
-            self.detail.set_sensitive(True)
-            self.global_combo.set_sensitive(True)
+        run_pkexec_commands(commands, self._bridge)
 
-            if ok:
-                invalidate_cache()
-                if self._current_app == tr("GLOBAL_NAME"):
-                    self.detail._populate_global_list()
-                else:
-                    self.detail.update_for_app(self._current_app)
+    def _on_pkexec_done(self, ok):
+        self.apply_btn.setText(tr("TEXT_APPLY"))
+        self.sidebar.setEnabled(True)
+        self.detail.setEnabled(True)
+        self.global_combo.setEnabled(True)
+
+        if ok:
+            invalidate_cache()
+            if self._current_app == tr("GLOBAL_NAME"):
+                self.detail._populate_global_list()
             else:
-                self._update_apply_sensitivity()
-            return False
-
-        run_pkexec_commands(commands, done)
+                self.detail.update_for_app(self._current_app)
+        else:
+            self._update_apply_sensitivity()
 
 
 # ---------- Main ----------
 def main():
     kyunnect_config_dir.mkdir(parents=True, exist_ok=True)
 
+    app = QApplication(sys.argv)
+    app.setApplicationName(tr("APP_NAME"))
+    app.setDesktopFileName(APP_ID)
+
     win = KyunnectWindow()
-    Gtk.main()
-    return 0
+    return app.exec()
 
 
 if __name__ == "__main__":

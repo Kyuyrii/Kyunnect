@@ -1,69 +1,54 @@
 #!/bin/bash
-set -e
 
-APP_NAME="Kyunnect"
-APP_ID="io.github.kyuyrii.kyunnect"
-ENTRYPOINT="kyunnect"
-ICON_SVG="${APP_ID}.svg"
-DESKTOP_FILE="${APP_ID}.desktop"
-
-sudo apt install -y \
-    python3-venv python3-dev \
-    libgirepository1.0-dev libcairo2-dev pkg-config \
-    gir1.2-gtk-3.0 libgtk-3-0 \
-    desktop-file-utils
+sudo apt install python3-venv -y
 
 python3 -m venv venv
 source venv/bin/activate
-pip install --upgrade pip
-pip install pyinstaller tomlkit "PyGObject<3.52"
+pip install pyinstaller PyQt6 PyQt6-Qt6 tomlkit
 
-pyinstaller \
-    --onedir \
-    --windowed \
-    --name "$APP_NAME" \
-    --icon icon.svg \
-    --hidden-import gi \
-    --hidden-import gi.repository.Gtk \
-    --hidden-import gi.repository.GdkPixbuf \
-    --hidden-import gi.repository.GLib \
-    --hidden-import gi.repository.Gio \
-    --collect-all gi \
-    --add-data "translation:translation" \
-    --add-data "${ICON_SVG}:." \
-    "$ENTRYPOINT"
+pyinstaller --onefile --windowed --name Kyunnect kyunnect
 
 if ! command -v appimagetool &> /dev/null; then
     echo "Downloading appimagetool..."
-    wget -q https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -O appimagetool
+    wget https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -O appimagetool
     chmod +x appimagetool
 fi
 
-rm -rf AppDir
-mkdir -p AppDir/usr/bin
-mkdir -p AppDir/usr/share/applications
-mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
-mkdir -p AppDir/usr/share/Kyunnect
+# Create AppDir structure
+mkdir -p AppDir
 
-cp -r "dist/${APP_NAME}" AppDir/usr/bin/
-cp -r translation AppDir/usr/share/Kyunnect/
-cp "$ICON_SVG" "AppDir/usr/share/icons/hicolor/scalable/apps/${APP_ID}.svg"
-cp "$DESKTOP_FILE" "AppDir/usr/share/applications/${APP_ID}.desktop"
+# Copy Kyunnect files
+echo "Copying files to AppDir..."
 
-ln -sf "usr/share/applications/${APP_ID}.desktop" "AppDir/${APP_ID}.desktop"
-ln -sf "usr/share/icons/hicolor/scalable/apps/${APP_ID}.svg" "AppDir/${APP_ID}.svg"
+# Copy the Kyunnect binary that was generated with PyInstaller.
+cp dist/Kyunnect AppDir/
 
+# Copy translation folder
+cp -r translation AppDir/
+
+# Copy .svg and .desktop files
+cp io.github.kyuyrii.kyunnect.svg AppDir/
+cp io.github.kyuyrii.kyunnect.desktop AppDir/
+
+# Copy Kyunnect code.
+# This isn't important for the AppImage to function; it's just to have easier access to the Kyunnect code.
+cp kyunnect AppDir/
+
+# Create AppRun
 cat > AppDir/AppRun << 'EOF'
 #!/bin/bash
-HERE="$(dirname "$(readlink -f -- "$0")")"
-export PATH="$HERE/usr/bin:$PATH"
-export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
-export APPDIR="$HERE"
+if [ -z "$APPIMAGE" ]; then
+    self="$(readlink -f -- "$0")"
+    export APPDIR="${self%/*}"
+fi
 
-exec "$HERE/usr/bin/Kyunnect/Kyunnect" "$@"
+export QT_QPA_PLATFORMTHEME=gtk3
+
+exec "$APPDIR/Kyunnect" "$@"
 EOF
 chmod +x AppDir/AppRun
 
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 ./appimagetool --no-appstream AppDir "${APP_NAME}-x86_64.AppImage"
+# Generate AppImage
+ARCH=x86_64 ./appimagetool AppDir
 
-echo "AppImage created: ${APP_NAME}-x86_64.AppImage"
+echo "AppImage created: $(ls *.AppImage)"
