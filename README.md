@@ -15,5 +15,5 @@ Ubuntu Desktop already has something like this, but it's only within the Gnome s
 </p>
 
 <p align="center">
-  <img width="1533" height="868" src="metainfo/kyunnect_ubuntu.png" />
+  <img width="1533" height="868" src="metainfo/kyunnect_lubuntu.png" />
 </p>
